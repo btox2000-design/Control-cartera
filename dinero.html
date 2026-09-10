@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Gestión de Fondo</title>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <link rel="stylesheet" href="css/styles.css">
+    <style>
+        .kpi-container { display: flex; gap: 20px; margin-bottom: 20px; flex-wrap: wrap; }
+        .kpi-card { flex: 1; min-width: 200px; background-color: var(--white); padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); border-left: 5px solid var(--secondary-color); }
+        .kpi-card h3 { margin: 0 0 10px 0; font-size: 0.85rem; text-transform: uppercase; color: #7f8c8d; }
+        .kpi-card .value { font-size: 1.6rem; font-weight: bold; color: var(--primary-color); }
+        
+        .section-box { background: #fff; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); margin-bottom: 20px; }
+        .btn-action { padding: 8px 15px; background-color: var(--secondary-color); color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; }
+        table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+        th, td { border: 1px solid #ddd; padding: 10px; text-align: right; }
+        th { background-color: #f2f2f2; }
+    </style>
+</head>
+<body>
+    <nav class="sidebar">
+        <h2>Control de Cartera</h2>
+        <a href="index.html">Resumen</a>
+        <a href="tables/clientes.html">Clientes</a>
+        <a href="analitica.html">Analítica</a>
+        <a href="dinero.html" class="active">Gestión de Fondo</a>
+    </nav>
+    <main class="main-content">
+        <h1>Gestión de Fondo (Tesorería)</h1>
+        
+        <div class="kpi-container">
+            <div class="kpi-card"><h3>Saldo Actual</h3><div class="value" id="kpiSaldo">$0.00</div></div>
+            <div class="kpi-card"><h3>Total Prestado (Activo)</h3><div class="value" id="kpiActivo">$0.00</div></div>
+            <div class="kpi-card"><h3>Utilidad Generada</h3><div class="value" id="kpiUtilidad">$0.00</div></div>
+        </div>
+
+        <div class="section-box">
+            <h2>Ajuste Manual de Fondo</h2>
+            <form id="adjustmentForm" style="display: flex; gap: 10px; flex-wrap: wrap;">
+                <input type="text" id="adjConcept" placeholder="Concepto (ej. Retiro utilidad)" required style="padding: 8px; flex: 1;">
+                <select id="adjCategory" style="padding: 8px;">
+                    <option value="Ajuste">Ajuste</option>
+                    <option value="Inyección">Inyección</option>
+                    <option value="Retiro">Retiro</option>
+                    <option value="Gasto">Gasto</option>
+                </select>
+                <input type="number" id="adjAmount" placeholder="Monto (+/-)" required style="padding: 8px; width: 120px;">
+                <button type="submit" class="btn-action">Aplicar</button>
+            </form>
+        </div>
+
+        <div class="section-box">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+                <h2>Historial de Movimientos</h2>
+                <button id="exportCsvBtn" class="btn-action" style="background-color: #27ae60;">Exportar CSV</button>
+            </div>
+            <table id="transTable">
+                <thead><tr><th>Fecha</th><th>ID Crédito</th><th>Categoría</th><th>Concepto</th><th>Monto</th></tr></thead>
+                <tbody id="transBody"></tbody>
+            </table>
+        </div>
+    </main>
+
+    <script type="module">
+        import { Storage } from './src/data/storage.js';
+        import { checkAuth } from './src/auth-guard.js';
+
+        const formatter = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2 });
+        const transBody = document.getElementById('transBody');
+        const adjForm = document.getElementById('adjustmentForm');
+
+        document.addEventListener('DOMContentLoaded', async () => {
+            await checkAuth();
+            renderFondo();
+        });
+
+        adjForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const concept = document.getElementById('adjConcept').value;
+            const category = document.getElementById('adjCategory').value;
+            const amount = parseFloat(document.getElementById('adjAmount').value);
+            
+            await Storage.addTransaction({ date: new Date().toISOString(), concept, category, amount, creditId: null });
+            
+            adjForm.reset();
+            await renderFondo();
+        });
+
+        document.getElementById('exportCsvBtn').onclick = async () => {
+            const trans = await Storage.getTransactions();
+            let csvContent = "data:text/csv;charset=utf-8,Fecha,ID Crédito,Categoría,Concepto,Monto\n";
+            
+            trans.forEach(t => {
+                const displayId = t.creditId ? t.creditId.toString().slice(-4) : '-';
+                const row = [
+                    new Date(t.date).toLocaleDateString(),
+                    displayId,
+                    t.category || "Ajuste",
+                    t.concept.replace(/,/g, ""), // Evitar conflictos con comas en CSV
+                    t.amount.toFixed(2)
+                ].join(",");
+                csvContent += row + "\n";
+            });
+            
+            const encodedUri = encodeURI(csvContent);
+            const link = document.createElement("a");
+            link.setAttribute("href", encodedUri);
+            link.setAttribute("download", "movimientos_fondo.csv");
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        };
+
+        async function renderFondo() {
+            const trans = await Storage.getTransactions();
+            const credits = await Storage.getCredits();
+            
+            let saldo = 0;
+            let utilidad = 0;
+            
+            transBody.innerHTML = '';
+            [...trans].reverse().forEach(t => {
+                saldo += t.amount;
+                // Clasificamos utilidad si es pago o interés (o ajuste de tipo ingreso)
+                if (t.category === "Pago" || t.concept.includes("Interés") || t.concept.includes("Pago mensual")) utilidad += t.amount;
+                
+                const displayId = t.creditId ? t.creditId.toString().slice(-4) : '-';
+                const category = t.category || "Ajuste";
+                
+                transBody.innerHTML += `<tr>
+                    <td>${new Date(t.date).toLocaleDateString()}</td>
+                    <td>${displayId}</td>
+                    <td>${category}</td>
+                    <td>${t.concept}</td>
+                    <td style="color: ${t.amount >= 0 ? 'green' : 'red'}">${formatter.format(t.amount)}</td>
+                </tr>`;
+            });
+
+
+            // KPI Activo: Suma de capital prestado en créditos no completados
+            let activo = 0;
+            credits.forEach(c => {
+                const totalMonths = parseInt(c.months || 0);
+                const paidCount = (c.paidMonths || []).length;
+                if (paidCount < totalMonths) activo += parseFloat(c.amount);
+            });
+
+            document.getElementById('kpiSaldo').textContent = formatter.format(saldo);
+            document.getElementById('kpiActivo').textContent = formatter.format(activo);
+            document.getElementById('kpiUtilidad').textContent = formatter.format(utilidad);
+        }
+    </script>
+</body>
+</html>

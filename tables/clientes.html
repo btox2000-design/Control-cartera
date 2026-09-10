@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Gestión de Clientes</title>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <link rel="stylesheet" href="../css/styles.css">
+</head>
+<body>
+    <nav class="sidebar">
+        <h2>Control de Cartera</h2>
+        <a href="../index.html">Resumen</a>
+        <a href="clientes.html" class="active">Clientes</a>
+        <a href="../analitica.html">Analítica</a>
+        <a href="../dinero.html">Gestión de Fondo</a>
+    </nav>
+    <main class="main-content">
+        <h1>Gestión de Clientes</h1>
+        
+        <form id="clientForm" style="margin-bottom: 20px;">
+            <input type="text" id="clientName" placeholder="Nombre del cliente" required style="padding: 8px;">
+            <button type="submit" style="padding: 8px;">Agregar Cliente</button>
+        </form>
+
+        <ul id="clientList" style="list-style: none; padding: 0;">
+            <!-- Lista generada por JS -->
+        </ul>
+    </main>
+
+    <script type="module">
+        import { Storage } from '../src/data/storage.js';
+        import { checkAuth } from '../src/auth-guard.js';
+
+        const clientForm = document.getElementById('clientForm');
+        const clientList = document.getElementById('clientList');
+
+        // Cargar clientes al iniciar
+        document.addEventListener('DOMContentLoaded', async () => {
+            await checkAuth();
+            renderClients();
+        });
+
+        clientForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const name = document.getElementById('clientName').value;
+            await Storage.addClient(name);
+            clientForm.reset();
+            await renderClients();
+        });
+
+        async function renderClients() {
+            const clients = await Storage.getClients();
+            clientList.innerHTML = '';
+            clients.forEach(client => {
+                const li = document.createElement('li');
+                li.style = "padding: 10px; border-bottom: 1px solid #ddd; display: flex; justify-content: space-between;";
+                li.innerHTML = `
+                    ${client.name}
+                    <button onclick="window.deleteClient(${client.id})" style="padding: 8px 12px; background-color: #e74c3c; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 0.85rem; width: 75px;">Borrar</button>
+                `;
+                clientList.appendChild(li);
+            });
+        }
+
+        window.deleteClient = async (id) => {
+            await Storage.deleteClient(id);
+            await renderClients();
+        }
+    </script>
+</body>
+</html>

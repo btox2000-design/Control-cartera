@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Iniciar Sesión - Control de Cartera</title>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f4f7f6; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
+        .auth-container { background: white; padding: 30px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); width: 300px; }
+        h2 { text-align: center; color: #2c3e50; }
+        input { width: 100%; padding: 10px; margin: 10px 0; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; }
+        button { width: 100%; padding: 10px; background-color: #3498db; color: white; border: none; border-radius: 4px; cursor: pointer; margin-top: 10px; }
+        button:hover { background-color: #2980b9; }
+        #message { margin-top: 10px; text-align: center; font-size: 0.9rem; }
+    </style>
+</head>
+<body>
+    <div class="auth-container">
+        <h2 id="title">Iniciar Sesión</h2>
+        <input type="email" id="email" placeholder="Correo electrónico" required>
+        <input type="password" id="password" placeholder="Contraseña" required>
+        <button id="authBtn">Entrar</button>
+        <p style="text-align: center; margin-top: 15px;">
+            <a href="#" id="toggleAuth">¿No tienes cuenta? Regístrate</a>
+        </p>
+        <div id="message"></div>
+    </div>
+
+    <script type="module">
+        const supabaseUrl = 'https://zihpupmjqrzhzoivnerk.supabase.co';
+        const supabaseKey = 'sb_publishable_GluME3HZqKkjgI74fAmNVA_oHwI7fZb';
+        const supabase = window.supabase.createClient(supabaseUrl, supabaseKey);
+
+        let isLogin = true;
+        const authBtn = document.getElementById('authBtn');
+        const toggleAuth = document.getElementById('toggleAuth');
+        const title = document.getElementById('title');
+        const message = document.getElementById('message');
+
+        toggleAuth.onclick = (e) => {
+            e.preventDefault();
+            isLogin = !isLogin;
+            title.textContent = isLogin ? 'Iniciar Sesión' : 'Registrarse';
+            authBtn.textContent = isLogin ? 'Entrar' : 'Registrarse';
+            toggleAuth.textContent = isLogin ? '¿No tienes cuenta? Regístrate' : '¿Ya tienes cuenta? Inicia sesión';
+        };
+
+        authBtn.onclick = async () => {
+            const email = document.getElementById('email').value;
+            const password = document.getElementById('password').value;
+            message.textContent = 'Procesando...';
+
+            if (isLogin) {
+                const { error } = await supabase.auth.signInWithPassword({ email, password });
+                if (error) message.textContent = 'Error: ' + error.message;
+                else window.location.href = 'index.html';
+            } else {
+                const { error } = await supabase.auth.signUp({ email, password });
+                if (error) message.textContent = 'Error: ' + error.message;
+                else message.textContent = 'Registro exitoso. Por favor, revisa tu correo para confirmar.';
+            }
+        };
+    </script>
+</body>
+</html>

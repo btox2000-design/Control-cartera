@@ -1,0 +1,319 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Detalle del Crédito</title>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <link rel="stylesheet" href="../css/styles.css">
+    <style>
+        .table-container { overflow-x: auto; margin-top: 20px; }
+        table { width: 100%; border-collapse: collapse; }
+        th, td { border: 1px solid #ddd; padding: 12px 10px; text-align: right; }
+        th { background-color: #f2f2f2; text-align: right; }
+        th:first-child, td:first-child { text-align: center; }
+        th:last-child, td:last-child { text-align: center; }
+        
+        .kpi-container { display: flex; gap: 20px; margin-top: 20px; margin-bottom: 20px; flex-wrap: wrap; }
+        .kpi-card { flex: 1; min-width: 200px; background-color: var(--white); padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); border-left: 5px solid var(--secondary-color); }
+        .kpi-card.green { border-left-color: #2ecc71; }
+        .kpi-card.orange { border-left-color: #e74c3c; }
+        .kpi-card h3 { margin: 0 0 10px 0; font-size: 0.85rem; text-transform: uppercase; color: #7f8c8d; }
+        .kpi-card .value { font-size: 1.6rem; font-weight: bold; color: var(--primary-color); }
+        
+        .progress-section { background-color: var(--white); padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); margin-bottom: 25px; }
+        .progress-info { display: flex; justify-content: space-between; align-items: center; font-weight: bold; font-size: 0.95rem; }
+        .progress-bar-bg { background-color: #eaeded; border-radius: 10px; height: 14px; width: 100%; overflow: hidden; margin-top: 10px; }
+        .progress-bar-fill { height: 100%; background: linear-gradient(90deg, #2ecc71, #27ae60); width: 0%; transition: width 0.4s ease-out; }
+        
+        .badge { padding: 6px 12px; border-radius: 20px; font-weight: bold; cursor: pointer; border: none; font-size: 0.8rem; transition: all 0.2s; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+        .badge-paid { background-color: #d4edda; color: #155724; }
+        .badge-pending { background-color: #f8d7da; color: #721c24; }
+        
+        .back-link { text-decoration: none; color: var(--secondary-color); font-weight: bold; display: inline-flex; align-items: center; margin-bottom: 15px; }
+        
+        .rate-info { background: #e8f4fd; padding: 15px; border-radius: 8px; margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center; }
+        .rate-value { font-size: 1.2rem; font-weight: bold; color: var(--primary-color); }
+        .btn-action { padding: 8px 15px; background-color: var(--secondary-color); color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; }
+
+        /* Modal */
+        .modal { display: none; position: fixed; z-index: 100; left: 0; top: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.4); }
+        .modal-content { background-color: #fff; margin: 10% auto; padding: 20px; border-radius: 8px; width: 350px; }
+        .modal-content input { width: 100%; padding: 10px; margin: 10px 0; border: 1px solid #ccc; border-radius: 4px; }
+    </style>
+</head>
+<body>
+    <nav class="sidebar">
+        <h2>Control de Cartera</h2>
+        <a href="../index.html">Resumen</a>
+        <a href="clientes.html">Clientes</a>
+        <a href="../analitica.html">Analítica</a>
+        <a href="../dinero.html">Gestión de Fondo</a>
+    </nav>
+    <main class="main-content">
+        <a href="../index.html" class="back-link">← Volver al resumen</a>
+        <h1 id="creditTitle">Detalle del Crédito</h1>
+        <p id="creditDescription" style="color: #7f8c8d; font-style: italic; margin-bottom: 20px;"></p>
+        
+        <div class="rate-info">
+            <div>
+                <span>Tasa de Interés Anual:</span>
+                <div class="rate-value" id="annualRateDisplay">0.0%</div>
+                <small id="monthlyRateDisplay">Tasa Mensual: 0.0%</small>
+            </div>
+            <div>
+                <button id="openRateModalBtn" class="btn-action">Modificar Tasa</button>
+                <button id="openCalcModalBtn" class="btn-action" style="background-color: #e67e22;">Calculadora de Tasa</button>
+                <button id="openFullPayoffBtn" class="btn-action" style="background-color: #27ae60;">Pago Total</button>
+            </div>
+        </div>
+
+        <div class="kpi-container">
+            <div class="kpi-card"><h3>Total a Pagar (Cap + Int)</h3><div class="value" id="kpiTotal">$0.00</div></div>
+            <div class="kpi-card green"><h3>Monto Recaudado</h3><div class="value" id="kpiPaid">$0.00</div></div>
+            <div class="kpi-card orange"><h3>Saldo Pendiente</h3><div class="value" id="kpiPending">$0.00</div></div>
+        </div>
+
+        <div class="progress-section">
+            <div class="progress-info"><span id="progressText">Progreso: 0%</span></div>
+            <div class="progress-bar-bg"><div class="progress-bar-fill" id="progressBarFill"></div></div>
+        </div>
+        
+        <div class="table-container">
+            <table id="amortizationTable">
+                <thead>
+                    <tr><th>Mes</th><th>Fecha Límite</th><th>Pago (Total)</th><th>Interés</th><th>Abono Capital</th><th>Saldo Pendiente</th><th>Estado</th></tr>
+                </thead>
+                <tbody id="amortizationBody"></tbody>
+            </table>
+        </div>
+    </main>
+
+    <!-- Modales -->
+    <div id="rateModal" class="modal">
+        <div class="modal-content">
+            <h3>Modificar Tasa Anual</h3>
+            <input type="number" id="modalRateInput" step="0.1" min="0" placeholder="Ej: 24.0">
+            <button id="confirmRateBtn" class="btn-action">Guardar</button>
+            <button class="closeModalBtn" style="background: #ccc; border:none; padding:8px 15px; border-radius:4px; cursor:pointer;">Cancelar</button>
+        </div>
+    </div>
+    
+    <div id="calcModal" class="modal">
+        <div class="modal-content">
+            <h3>Calculadora de Tasa</h3>
+            <label>Pago mensual objetivo:</label>
+            <input type="number" id="calcTargetPayment" placeholder="Ej: 500">
+            <button id="calcRateBtn" class="btn-action">Calcular Tasa</button>
+            <div id="calcResult" style="margin-top: 10px; font-weight: bold; color: var(--secondary-color);"></div>
+            <div style="margin-top: 15px;">
+                <button id="applyRateBtn" class="btn-action" style="background-color: #27ae60; display: none;">Aplicar Tasa</button>
+                <button class="closeModalBtn" style="background: #ccc; border:none; padding:8px 15px; border-radius:4px; cursor:pointer;">Cerrar</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="confirmModal" class="modal">
+        <div class="modal-content">
+            <h3>Confirmar Cambio</h3>
+            <p id="confirmMessage"></p>
+            <button id="confirmYesBtn" class="btn-action" style="background-color: #27ae60;">Sí, confirmar</button>
+            <button class="closeModalBtn" style="background: #ccc; border:none; padding:8px 15px; border-radius:4px; cursor:pointer;">Cancelar</button>
+        </div>
+    </div>
+
+    <!-- Modal para Pago Total -->
+    <div id="fullPayoffModal" class="modal">
+        <div class="modal-content">
+            <h3>Pago Total del Crédito</h3>
+            <p id="fullPayoffMessage"></p>
+            <div id="fullPayoffConfirmStep" style="display: none;">
+                <p><strong>¿Estás realmente seguro? Esta acción cerrará el crédito.</strong></p>
+            </div>
+            <button id="btnInitialConfirm" class="btn-action" style="background-color: #27ae60;">Confirmar Pago</button>
+            <button id="btnFinalConfirm" class="btn-action" style="background-color: #c0392b; display: none;">¡Sí, pagar todo!</button>
+            <button class="closeModalBtn" style="background: #ccc; border:none; padding:8px 15px; border-radius:4px; cursor:pointer;">Cancelar</button>
+        </div>
+    </div>
+<script type="module">
+    import { Storage } from '../src/data/storage.js';
+    import { FinancialService } from '../src/services/financial.js';
+    import { checkAuth } from '../src/auth-guard.js';
+
+    const formatter = new Intl.NumberFormat('en-US', {
+        style: 'currency',
+        currency: 'USD',
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2
+    });
+
+    document.addEventListener('DOMContentLoaded', async () => {
+        await checkAuth();
+        const params = new URLSearchParams(window.location.search);
+        const id = params.get('id');
+        let credits = await Storage.getCredits();
+        let credit = credits.find(c => c.id == id);
+
+        if (!credit) return;
+            if (!credit.paidMonths) credit.paidMonths = [];
+            if (credit.annualRate === undefined) credit.annualRate = 0.0;
+            
+            const createdAt = new Date(credit.createdAt || new Date().toISOString());
+
+            const rateModal = document.getElementById('rateModal');
+            const calcModal = document.getElementById('calcModal');
+            const confirmModal = document.getElementById('confirmModal');
+            const fullPayoffModal = document.getElementById('fullPayoffModal');
+            
+            document.querySelectorAll('.closeModalBtn').forEach(b => b.onclick = () => { 
+                rateModal.style.display = 'none'; 
+                calcModal.style.display = 'none'; 
+                confirmModal.style.display = 'none';
+                fullPayoffModal.style.display = 'none';
+            });
+            
+            document.getElementById('openRateModalBtn').onclick = () => { document.getElementById('modalRateInput').value = credit.annualRate; rateModal.style.display = 'block'; };
+            document.getElementById('openCalcModalBtn').onclick = () => calcModal.style.display = 'block';
+            
+            document.getElementById('confirmRateBtn').onclick = async () => {
+                const newRate = parseFloat(document.getElementById('modalRateInput').value);
+                if (isNaN(newRate) || newRate < 0) return alert("Tasa inválida");
+                await Storage.updateCreditRate(credit.id, newRate);
+                credit.annualRate = newRate;
+                rateModal.style.display = 'none';
+                await renderDetails();
+            };
+
+            document.getElementById('calcRateBtn').onclick = () => {
+                const targetPayment = parseFloat(document.getElementById('calcTargetPayment').value);
+                const principal = parseFloat(credit.amount);
+                const months = parseInt(credit.months);
+                
+                let low = 0, high = 1000, mid;
+                for(let i=0; i<50; i++) {
+                    mid = (low + high) / 2;
+                    let r = (mid / 12) / 100;
+                    let pmt = r > 0 ? principal * (r * Math.pow(1 + r, months)) / (Math.pow(1 + r, months) - 1) : principal / months;
+                    if (pmt < targetPayment) low = mid; else high = mid;
+                }
+                const suggestedRate = low.toFixed(2);
+                document.getElementById('calcResult').textContent = `Tasa sugerida: ${suggestedRate}% anual`;
+                const applyBtn = document.getElementById('applyRateBtn');
+                applyBtn.style.display = 'inline-block';
+                applyBtn.onclick = async () => {
+                    const parsedRate = parseFloat(suggestedRate);
+                    await Storage.updateCreditRate(credit.id, parsedRate);
+                    credit.annualRate = parsedRate;
+                    calcModal.style.display = 'none';
+                    applyBtn.style.display = 'none';
+                    await renderDetails();
+                };
+            };
+
+            // Pago Total
+            document.getElementById('openFullPayoffBtn').onclick = () => {
+                const total = FinancialService.calculateCurrentPayoff(parseFloat(credit.amount), parseFloat(credit.annualRate), parseInt(credit.months), createdAt, credit.paidMonths);
+                document.getElementById('fullPayoffMessage').textContent = `El monto total a pagar hoy es: ${formatter.format(total)}`;
+                document.getElementById('btnInitialConfirm').style.display = 'inline-block';
+                document.getElementById('btnFinalConfirm').style.display = 'none';
+                document.getElementById('fullPayoffConfirmStep').style.display = 'none';
+                fullPayoffModal.style.display = 'block';
+            };
+
+            document.getElementById('btnInitialConfirm').onclick = () => {
+                document.getElementById('btnInitialConfirm').style.display = 'none';
+                document.getElementById('btnFinalConfirm').style.display = 'inline-block';
+                document.getElementById('fullPayoffConfirmStep').style.display = 'block';
+            };
+
+            document.getElementById('btnFinalConfirm').onclick = async () => {
+                const totalMonths = parseInt(credit.months);
+                for (let i = 1; i <= totalMonths; i++) {
+                    if (!credit.paidMonths.includes(i)) {
+                        credit.paidMonths.push(i);
+                    }
+                }
+                const total = FinancialService.calculateCurrentPayoff(parseFloat(credit.amount), parseFloat(credit.annualRate), parseInt(credit.months), createdAt, []);
+                await Storage.addTransaction({ date: new Date().toISOString(), concept: `Pago total: ${credit.client}`, amount: total, creditId: credit.id, category: 'Pago' });
+                await Storage.updateCreditPaidMonths(credit.id, credit.paidMonths);
+                fullPayoffModal.style.display = 'none';
+                await renderDetails();
+            };
+
+            await renderDetails();
+
+            async function renderDetails() {
+                const tbody = document.getElementById('amortizationBody');
+                if (!tbody) return;
+                
+                const annualRate = parseFloat(credit.annualRate);
+                document.getElementById('annualRateDisplay').textContent = `${annualRate.toFixed(1)}%`;
+                document.getElementById('monthlyRateDisplay').textContent = `Tasa Mensual: ${(annualRate/12).toFixed(2)}%`;
+                
+                document.getElementById('creditTitle').textContent = `Crédito de ${credit.client} - ${formatter.format(parseFloat(credit.amount))}`;
+                if (credit.description) {
+                    document.getElementById('creditDescription').textContent = credit.description;
+                }
+                tbody.innerHTML = '';
+                
+                const totalMonths = parseInt(credit.months);
+                const principalAmount = parseFloat(credit.amount);
+                
+                const schedule = FinancialService.calculateAmortizationSchedule(principalAmount, annualRate, totalMonths, createdAt);
+
+                let totalExpected = 0, totalPaid = 0, totalPending = 0;
+                const today = new Date(); today.setHours(0,0,0,0);
+
+                schedule.forEach((row, index) => {
+                    const monthIndex = index + 1;
+                    const dueDate = new Date(createdAt.getFullYear(), createdAt.getMonth() + monthIndex, 5);
+                    const dueDateStr = dueDate.toLocaleDateString('es-ES');
+                    
+                    totalExpected += row.payment;
+                    const isPaid = credit.paidMonths.includes(monthIndex);
+                    if (isPaid) totalPaid += row.payment; else totalPending += row.payment;
+
+                    let rowStyle = "";
+                    if (!isPaid) {
+                        const daysDiff = Math.ceil((dueDate - today) / (1000 * 60 * 60 * 24));
+                        if (daysDiff < 0) rowStyle = 'style="background-color: #f8d7da;"';
+                        else if (daysDiff <= 5) rowStyle = 'style="background-color: #fff3cd;"';
+                    } else rowStyle = 'style="background-color: #f1fcf4;"';
+
+                    tbody.innerHTML += `<tr ${rowStyle}><td>${monthIndex}</td><td>${dueDateStr}</td><td>${formatter.format(row.payment)}</td><td>${formatter.format(row.interest)}</td><td>${formatter.format(row.principal)}</td><td>${formatter.format(Math.max(0, row.balance))}</td>
+                        <td><button class="badge ${isPaid ? 'badge-paid' : 'badge-pending'}" onclick="window.showConfirmModal(${monthIndex})">${isPaid ? '✓ Pagado' : 'Pendiente'}</button></td></tr>`;
+                });
+
+                const paidCount = credit.paidMonths.length;
+                const progressPct = totalMonths > 0 ? Math.round((paidCount / totalMonths) * 100) : 0;
+                document.getElementById('kpiTotal').textContent = formatter.format(totalExpected);
+                document.getElementById('kpiPaid').textContent = formatter.format(totalPaid);
+                document.getElementById('kpiPending').textContent = formatter.format(totalPending);
+                document.getElementById('progressText').textContent = `Progreso: ${progressPct}%`;
+                document.getElementById('progressBarFill').style.width = `${progressPct}%`;
+            }
+
+            window.showConfirmModal = (month) => {
+                const isPaid = credit.paidMonths.includes(month);
+                const message = isPaid ? `¿Deseas marcar el mes ${month} como PENDIENTE?` : `¿Deseas marcar el mes ${month} como PAGADO?`;
+                document.getElementById('confirmMessage').textContent = message;
+                confirmModal.style.display = 'block';
+                document.getElementById('confirmYesBtn').onclick = async () => {
+                    const monthlyPayment = FinancialService.calculateMonthlyPayment(parseFloat(credit.amount), parseFloat(credit.annualRate), parseInt(credit.months));
+
+                    const index = credit.paidMonths.indexOf(month);
+                    if (index === -1) {
+                        credit.paidMonths.push(month);
+                        await Storage.addTransaction({ date: new Date().toISOString(), concept: `Pago mensual ${month}: ${credit.client}`, amount: monthlyPayment, creditId: credit.id, category: 'Pago' });
+                    } else {
+                        credit.paidMonths.splice(index, 1);
+                        await Storage.addTransaction({ date: new Date().toISOString(), concept: `Reversión pago ${month}: ${credit.client}`, amount: -monthlyPayment, creditId: credit.id, category: 'Ajuste' });
+                    }
+                    await Storage.updateCreditPaidMonths(credit.id, credit.paidMonths);
+                    confirmModal.style.display = 'none';
+                    await renderDetails();
+                };
+            };
+        });
+    </script>
+</body>
+</html>
