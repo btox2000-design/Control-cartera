@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Detalle del Crédito - Control de Cartera V2</title>
+    <link rel="stylesheet" href="/src/style.css">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Sidebar escritorio -->
+        <aside class="desktop-sidebar">
+            <h2>Control de Cartera</h2>
+            <a href="/index.html">Resumen</a>
+            <a href="/src/views/clientes.html">Clientes</a>
+            <a href="/src/views/analitica.html">Analítica</a>
+            <a href="/src/views/dinero.html">Gestión de Fondo</a>
+            <div id="desktop-user-status" style="margin-top: auto; padding-top: 20px; border-top: 1px solid #455a64;"></div>
+        </aside>
+
+        <main class="main-content">
+            <a href="/index.html" class="back-link">← Volver al resumen</a>
+            <h1 id="creditTitle">Detalle del Crédito</h1>
+            <p id="creditDateDisplay" style="color: var(--text-muted); margin-bottom: 20px;"></p>
+            <div id="creditDescription" class="credit-description"></div>
+            
+            <div class="rate-info" style="background: white; padding: 20px; border-radius: var(--radius-lg); margin: 20px 0; box-shadow: var(--shadow); border: 1px solid var(--border);">
+                <div id="annualRateDisplay" style="font-weight:bold; font-size: 1.2rem; margin-bottom:15px;"></div>
+                <div style="display:flex; gap:10px; flex-wrap:wrap;">
+                    <button id="openRateModalBtn" class="btn-action">Tasa</button>
+                    <button id="openCalcRateModalBtn" class="btn-action">Calcular Tasa</button>
+                    <button id="openDateModalBtn" class="btn-action">Cambiar Fecha</button>
+                    <button id="openFullPayoffBtn" class="btn-delete">Pago Total</button>
+                </div>
+            </div>
+
+            <div class="kpi-container">
+                <div class="kpi-card"><h3>Total a Pagar</h3><div class="value" id="kpiTotal">$0.00</div></div>
+                <div class="kpi-card"><h3>Pagado</h3><div class="value" id="kpiPaid">$0.00</div></div>
+                <div class="kpi-card"><h3>Pendiente</h3><div class="value" id="kpiPending">$0.00</div></div>
+            </div>
+
+            <div class="table-container" style="overflow-x: auto;">
+                <table>
+                    <thead><tr><th>Mes</th><th>Fecha Límite</th><th>Pago</th><th>Estado</th></tr></thead>
+                    <tbody id="amortizationBody"></tbody>
+                </table>
+            </div>
+        </main>
+    </div>
+
+    <!-- Navegación móvil -->
+    <nav class="mobile-nav">
+        <a href="/index.html"><span>📊</span> Resumen</a>
+        <a href="/src/views/clientes.html"><span>👥</span> Clientes</a>
+        <a href="/src/views/analitica.html"><span>📈</span> Analítica</a>
+        <a href="/src/views/dinero.html"><span>💰</span> Fondo</a>
+    </nav>
+
+    <!-- Modales -->
+    <div id="modal-container" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:100; align-items:center; justify-content:center;">
+        <div id="modal-content" style="background:white; padding:20px; width:300px; border-radius:8px; text-align:center;">
+            <h3 id="modalTitle">Título</h3>
+            <div id="modalBody" style="margin:20px 0;"></div>
+            <div style="display:flex; gap:10px;">
+                <button id="btnModalConfirm" class="btn-action" style="flex:1;">Confirmar</button>
+                <button class="closeModalBtn btn-cancel" style="flex:1;">Cerrar</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal Cambio Estado Mensualidad -->
+    <div id="statusModal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:100; align-items:center; justify-content:center;">
+        <div style="background:white; padding:20px; width:300px; border-radius:8px; text-align:center;">
+            <h3>Cambiar Estado</h3>
+            <p id="statusMessage"></p>
+            <div style="display:flex; gap:10px; margin-top:20px;">
+                <button id="btnConfirmStatus" class="btn-action" style="flex:1;">Confirmar</button>
+                <button class="closeModalBtn btn-cancel" style="flex:1;">Cancelar</button>
+            </div>
+        </div>
+    </div>
+
+    <script type="module">
+        import { AuthManager } from '/main.js';
+        import { Storage } from '/src/data/storage.js';
+        import { FinancialService } from '/src/services/financial.js';
+        import { getPagos, createPago, deletePago } from '/src/data/payments.js';
+        import { createMovimiento, deleteMovimiento } from '/src/data/treasury.js';
+        
+        const formatter = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2 });
+        let currentCredit = null;
+        let creditPayments = [];
+        const modal = document.getElementById('modal-container');
+
+        // Cálculo fecha vencimiento con corte (día 5)
+        function calculateDueDate(createdAt, monthIndex) {
+            const date = new Date(createdAt);
+            let baseMonth = date.getMonth() + (date.getDate() > 25 ? 2 : 1);
+            let baseYear = date.getFullYear();
+            return new Date(baseYear, baseMonth + monthIndex, 5);
+        }
+
+        async function loadDetails() {
+            try {
+                const params = new URLSearchParams(window.location.search);
+                const id = params.get('id');
+                console.log("ID del parámetro URL:", id); // Log de depuración
+                
+                const credits = await Storage.getCredits();
+                currentCredit = credits.find(c => String(c.id) === String(id));
+                console.log("Crédito encontrado:", currentCredit); // Log de depuración
+                
+                if (!currentCredit) return;
+
+                // Cargar pagos reales
+                const { data: pagos } = await getPagos(currentCredit.id); // Asegurar uso de UUID
+                console.log("Pagos cargados:", pagos); // Log de depuración
+                creditPayments = pagos || [];
+
+                document.getElementById('creditTitle').textContent = `Crédito de ${currentCredit.client}`;
+                document.getElementById('creditDateDisplay').textContent = `Fecha de inicio: ${new Date(currentCredit.createdAt).toLocaleDateString()}`;
+                document.getElementById('creditDescription').textContent = currentCredit.description || 'Sin descripción';
+                document.getElementById('annualRateDisplay').textContent = `Tasa Anual: ${currentCredit.annualRate || 0}%`;
+
+                const createdAt = new Date(currentCredit.createdAt);
+                const schedule = FinancialService.calculateAmortizationSchedule(currentCredit.amount, currentCredit.annualRate || 0, currentCredit.months, createdAt);
+                
+                const tbody = document.getElementById('amortizationBody');
+                tbody.innerHTML = '';
+                
+                let totalPaid = 0;
+                const today = new Date();
+                
+                const nextMonthIndex = schedule.findIndex((_, i) => calculateDueDate(createdAt, i) >= today);
+
+                schedule.forEach((row, i) => {
+                    // Buscar pago por mes
+                    const pagoMes = creditPayments.find(p => p.mes_correspondiente === i + 1);
+                    const isPaid = !!pagoMes;
+                    
+                    if (isPaid) totalPaid += row.payment;
+
+                    const dueDate = calculateDueDate(createdAt, i);
+                    const formattedDate = dueDate.toLocaleDateString();
+                    const isNext = (i === nextMonthIndex);
+                    
+                    const tr = document.createElement('tr');
+                    tr.style = isNext ? "background-color: #fff9c4;" : "";
+                    tr.innerHTML = `
+                        <td>${i + 1} ${isNext ? '<strong>(Próximo)</strong>' : ''}</td>
+                        <td>${formattedDate}</td>
+                        <td>${formatter.format(row.payment)}</td>
+                        <td>
+                            <button class="btn-action ${isPaid ? 'btn-status-paid' : 'btn-status-pending'} btn-status" 
+                                    data-month="${i + 1}" 
+                                    data-is-paid="${isPaid}"
+                                    data-pago-id="${pagoMes?.id || ''}">
+                                ${isPaid ? 'Pagado' : 'Pendiente'}
+                            </button>
+                        </td>
+                    `;
+                    tbody.appendChild(tr);
+                });
+
+                document.getElementById('kpiTotal').textContent = formatter.format(currentCredit.amount * (1 + (currentCredit.annualRate || 0)/100));
+                document.getElementById('kpiPaid').textContent = formatter.format(totalPaid);
+                document.getElementById('kpiPending').textContent = formatter.format(currentCredit.amount * (1 + (currentCredit.annualRate || 0)/100) - totalPaid);
+            } catch (err) { console.error("Error al cargar detalle:", err); }
+        }
+
+        // Delegación de eventos pagos
+        document.getElementById('amortizationBody').addEventListener('click', async (e) => {
+            if (e.target.classList.contains('btn-status')) {
+                const month = parseInt(e.target.getAttribute('data-month'));
+                const isPaid = e.target.getAttribute('data-is-paid') === 'true';
+                const pagoId = e.target.getAttribute('data-pago-id');
+                
+                const createdAt = new Date(currentCredit.createdAt);
+                const schedule = FinancialService.calculateAmortizationSchedule(currentCredit.amount, currentCredit.annualRate || 0, currentCredit.months, createdAt);
+                const paymentAmount = schedule[month - 1].payment;
+                
+                document.getElementById('statusMessage').textContent = `¿Cambiar mes ${month} a ${isPaid ? 'Pendiente' : 'Pagado'}?`;
+                document.getElementById('statusModal').style.display = 'flex';
+                
+                document.getElementById('btnConfirmStatus').onclick = async () => {
+                    if (isPaid) {
+                        await deletePago(pagoId);
+                        // Ajuste: usar creditId y monto para eliminar el movimiento de la tabla transactions
+                        await deleteMovimiento(currentCredit.id, paymentAmount);
+                    } else {
+                        await createPago(currentCredit.id, paymentAmount, month);
+                        // Ajuste: pasar el creditId al crear el movimiento
+                        await createMovimiento('ingreso', paymentAmount, currentCredit.id);
+                    }
+                    document.getElementById('statusModal').style.display = 'none';
+                    loadDetails();
+                };
+            }
+        });
+
+        // Modales genéricos y cierre
+        document.getElementById('openRateModalBtn').onclick = () => {
+            showModal('Actualizar Tasa Anual', 
+                `<input type="number" id="newRateInput" value="${currentCredit.annualRate || 0}">`,
+                async () => {
+                    const newRate = parseFloat(document.getElementById('newRateInput').value);
+                    await Storage.updateCreditRate(currentCredit.id, newRate);
+                    modal.style.display = 'none';
+                    loadDetails();
+                }
+            );
+        };
+                // Nueva funcionalidad
+        document.getElementById('openCalcRateModalBtn').onclick = () => {
+            showModal('Calcular Tasa desde Pago Mensual', 
+                `
+                <p>Monto: ${formatter.format(currentCredit.amount)}</p>
+                <p>Meses: ${currentCredit.months}</p>
+                <input type="number" id="targetPaymentInput" placeholder="Pago mensual deseado">
+                `,
+                async () => {
+                    const targetPayment = parseFloat(document.getElementById('targetPaymentInput').value);
+                    const calculatedRate = FinancialService.calculateRateFromPayment(currentCredit.amount, targetPayment, currentCredit.months);
+                    
+                    // Reemplazo del confirm nativo por lógica de modal (reutilizando showModal)
+                    showModal('Confirmar',
+                        `<p>La tasa calculada es ${calculatedRate}%. ¿Aplicar al crédito?</p>`,
+                        async () => {
+                            await Storage.updateCreditRate(currentCredit.id, calculatedRate);
+                            modal.style.display = 'none';
+                            loadDetails();
+                        }
+                    );
+                }
+            );
+        };
+        document.getElementById('openFullPayoffBtn').onclick = () => {
+            const createdAt = new Date(currentCredit.createdAt);
+            const schedule = FinancialService.calculateAmortizationSchedule(currentCredit.amount, currentCredit.annualRate || 0, currentCredit.months, createdAt);
+            const paidMonths = creditPayments.map(p => p.mes_correspondiente);
+            
+            const totalToPay = FinancialService.calculateTotalPayoffAtDate(
+                currentCredit.amount, 
+                currentCredit.annualRate || 0, 
+                currentCredit.months, 
+                createdAt, 
+                paidMonths
+            );
+
+            showModal('Pago Total', 
+                `<p>¿Liquidación total de ${formatter.format(totalToPay)}?</p>`,
+                async () => {
+                    // 1. Registrar el pago total como un ingreso global en tesorería
+                    await createMovimiento('ingreso', totalToPay, currentCredit.id);
+                    
+                    // 2. Registrar cada mensualidad restante como pagada
+                    for (let i = 0; i < currentCredit.months; i++) {
+                        if (!paidMonths.includes(i + 1)) {
+                            await createPago(currentCredit.id, schedule[i].payment, i + 1);
+                        }
+                    }
+                    
+                    modal.style.display = 'none';
+                    loadDetails();
+                }
+            );
+        };
+        document.getElementById('openDateModalBtn').onclick = () => {
+            showModal('Cambiar Fecha Inicio', 
+                `<input type="date" id="newDateInput" value="${currentCredit.createdAt.split('T')[0]}">`,
+                async () => {
+                    const newDate = document.getElementById('newDateInput').value;
+                    await Storage.updateCreditDate(currentCredit.id, newDate);
+                    modal.style.display = 'none';
+                    loadDetails();
+                }
+            );
+        };
+        function showModal(title, body, confirmCallback) {
+            document.getElementById('modalTitle').textContent = title;
+            document.getElementById('modalBody').innerHTML = body;
+            document.getElementById('btnModalConfirm').onclick = confirmCallback;
+            modal.style.display = 'flex';
+        }
+        document.querySelectorAll('.closeModalBtn').forEach(b => b.onclick = () => {
+            modal.style.display = 'none';
+            document.getElementById('statusModal').style.display = 'none';
+        });
+
+        document.addEventListener('DOMContentLoaded', async () => {
+            await AuthManager.init();
+            loadDetails();
+        });
+    </script>
+</body>
+</html>

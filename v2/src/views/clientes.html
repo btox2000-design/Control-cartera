@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Clientes - Control de Cartera V2</title>
+    <link rel="stylesheet" href="/src/style.css">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Sidebar escritorio -->
+        <aside class="desktop-sidebar">
+            <h2>Control de Cartera</h2>
+            <a href="/index.html">Resumen</a>
+            <a href="/src/views/clientes.html" class="active">Clientes</a>
+            <a href="/src/views/analitica.html">Analítica</a>
+            <a href="/src/views/dinero.html">Gestión de Fondo</a>
+            <div id="desktop-user-status" style="margin-top: auto; padding-top: 20px; border-top: 1px solid #455a64;"></div>
+        </aside>
+
+        <main class="main-content">
+            <h1>Gestión de Clientes</h1>
+            <div class="table-container" style="padding: 20px;">
+                <form id="clientForm" style="display: flex; gap: 10px; margin-bottom: 20px;">
+                    <input type="text" id="clientName" placeholder="Nombre del cliente" required style="padding: 10px; flex: 1; border: 1px solid var(--border-color); border-radius: 8px;">
+                    <button type="submit" class="btn-action">Agregar</button>
+                </form>
+                <ul id="clientList" style="list-style: none;"></ul>
+            </div>
+        </main>
+    </div>
+
+    <!-- Navegación móvil -->
+    <nav class="mobile-nav">
+        <a href="/index.html"><span>📊</span> Resumen</a>
+        <a href="/src/views/clientes.html" class="active"><span>👥</span> Clientes</a>
+        <a href="/src/views/analitica.html"><span>📈</span> Analítica</a>
+        <a href="/src/views/dinero.html"><span>💰</span> Fondo</a>
+    </nav>
+
+    <script type="module">
+        import { AuthManager } from '/main.js';
+        import { Storage } from '/src/data/storage.js';
+        
+        const clientForm = document.getElementById('clientForm');
+        const clientList = document.getElementById('clientList');
+
+        async function renderClients() {
+            try {
+                const clients = await Storage.getClients();
+                clientList.innerHTML = '';
+                clients.forEach(client => {
+                    const li = document.createElement('li');
+                    li.style = "padding: 15px; border-bottom: 1px solid var(--border-color); display: flex; justify-content: space-between; align-items: center;";
+                    li.innerHTML = `
+                        ${client.name}
+                        <button class="btn-delete" data-id="${client.id}" style="padding: 6px 10px; background-color: var(--danger-color); color: white; border: none; border-radius: 6px; cursor: pointer;">Borrar</button>
+                    `;
+                    clientList.appendChild(li);
+                });
+            } catch (err) {
+                console.error("Error al cargar clientes:", err);
+            }
+        }
+
+        clientForm.onsubmit = async (e) => {
+            e.preventDefault();
+            const name = document.getElementById('clientName').value;
+            try {
+                await Storage.addClient(name);
+                clientForm.reset();
+                renderClients();
+            } catch (err) {
+                console.error("Error al agregar cliente:", err);
+                alert("No se pudo agregar el cliente.");
+            }
+        };
+
+        clientList.addEventListener('click', async (e) => {
+            if (e.target.classList.contains('btn-delete')) {
+                const id = e.target.getAttribute('data-id');
+                if (confirm('¿Seguro que deseas borrar este cliente?')) {
+                    try {
+                        await Storage.deleteClient(id);
+                        renderClients();
+                    } catch (err) {
+                        console.error("Error al borrar cliente:", err);
+                        alert("No se pudo borrar el cliente.");
+                    }
+                }
+            }
+        });
+
+        document.addEventListener('DOMContentLoaded', async () => {
+            await AuthManager.init();
+            renderClients();
+        });
+    </script>
+</body>
+</html>

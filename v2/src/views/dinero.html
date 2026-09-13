@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gestión de Fondo - Control de Cartera V2</title>
+    <link rel="stylesheet" href="/src/style.css">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Sidebar escritorio -->
+        <aside class="desktop-sidebar">
+            <h2>Control de Cartera</h2>
+            <a href="/index.html">Resumen</a>
+            <a href="/src/views/clientes.html">Clientes</a>
+            <a href="/src/views/analitica.html">Analítica</a>
+            <a href="/src/views/dinero.html" class="active">Gestión de Fondo</a>
+            <div id="desktop-user-status" style="margin-top: auto; padding-top: 20px; border-top: 1px solid #455a64;"></div>
+        </aside>
+
+        <main class="main-content">
+            <h1>Tesorería</h1>
+            
+            <div class="kpi-container">
+                <div class="kpi-card"><h3>Saldo Actual</h3><div class="value" id="kpiSaldo">$0.00</div></div>
+                <div class="kpi-card"><h3>Activo (Prestado)</h3><div class="value" id="kpiActivo">$0.00</div></div>
+                <div class="kpi-card"><h3>Utilidad</h3><div class="value" id="kpiUtilidad">$0.00</div></div>
+            </div>
+
+            <div class="table-container" style="padding: 20px;">
+                <h2>Ajuste Manual</h2>
+                <form id="adjustmentForm" style="display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 20px;">
+                    <input type="text" id="adjConcept" placeholder="Concepto" required style="padding: 10px; flex: 1; border: 1px solid var(--border-color); border-radius: 8px;">
+                    <select id="adjCategory" style="padding: 10px; border: 1px solid var(--border-color); border-radius: 8px;">
+                        <option value="Ajuste">Ajuste</option>
+                        <option value="Inyección">Inyección</option>
+                        <option value="Retiro">Retiro</option>
+                        <option value="Gasto">Gasto</option>
+                    </select>
+                    <input type="number" id="adjAmount" placeholder="Monto (+/-)" required style="padding: 10px; width: 120px; border: 1px solid var(--border-color); border-radius: 8px;">
+                    <button type="submit" class="btn-action">Aplicar</button>
+                </form>
+
+                <h2>Movimientos</h2>
+                <div style="overflow-x: auto;">
+                    <table id="transTable">
+                        <thead><tr><th>Fecha</th><th>Categoría</th><th>Concepto</th><th>Monto</th></tr></thead>
+                        <tbody id="transBody"></tbody>
+                    </table>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Navegación móvil -->
+    <nav class="mobile-nav">
+        <a href="/index.html"><span>📊</span> Resumen</a>
+        <a href="/src/views/clientes.html"><span>👥</span> Clientes</a>
+        <a href="/src/views/analitica.html"><span>📈</span> Analítica</a>
+        <a href="/src/views/dinero.html" class="active"><span>💰</span> Fondo</a>
+    </nav>
+
+    <script type="module">
+        import { AuthManager } from '/main.js';
+        import { Storage } from '/src/data/storage.js';
+
+        const formatter = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2 });
+        const transBody = document.getElementById('transBody');
+        const adjForm = document.getElementById('adjustmentForm');
+
+        async function renderFondo() {
+            try {
+                const trans = await Storage.getTransactions();
+                const credits = await Storage.getCredits();
+                
+                let saldo = 0;
+                let utilidad = 0;
+                
+                transBody.innerHTML = '';
+                [...trans].sort((a,b) => new Date(b.date) - new Date(a.date)).forEach(t => {
+                    saldo += parseFloat(t.amount);
+                    if (t.category === "Pago" || t.concept.includes("Interés") || t.concept.includes("Pago mensual")) utilidad += parseFloat(t.amount);
+                    
+                    transBody.innerHTML += `<tr>
+                        <td>${new Date(t.date).toLocaleDateString()}</td>
+                        <td>${t.category || "Ajuste"}</td>
+                        <td>${t.concept}</td>
+                        <td style="color: ${parseFloat(t.amount) >= 0 ? 'var(--success)' : 'var(--danger)'}; font-weight: 600;">
+                            ${formatter.format(t.amount)}
+                        </td>
+                    </tr>`;
+                });
+
+                let activo = 0;
+                credits.forEach(c => {
+                    const totalMonths = parseInt(c.months || 0);
+                    const paidCount = (c.paidMonths || []).length;
+                    if (paidCount < totalMonths) activo += parseFloat(c.amount);
+                });
+
+                document.getElementById('kpiSaldo').textContent = formatter.format(saldo);
+                document.getElementById('kpiActivo').textContent = formatter.format(activo);
+                document.getElementById('kpiUtilidad').textContent = formatter.format(utilidad);
+            } catch (err) {
+                console.error("Error al renderizar fondo:", err);
+            }
+        }
+
+        adjForm.onsubmit = async (e) => {
+            e.preventDefault();
+            const concept = document.getElementById('adjConcept').value;
+            const category = document.getElementById('adjCategory').value;
+            const amount = parseFloat(document.getElementById('adjAmount').value);
+            
+            try {
+                await Storage.addTransaction({ 
+                    date: new Date().toISOString(), 
+                    concept, 
+                    category, 
+                    amount, 
+                    creditId: null 
+                });
+                
+                adjForm.reset();
+                await renderFondo();
+            } catch (err) {
+                console.error("Error al aplicar ajuste:", err);
+                alert("No se pudo aplicar el ajuste.");
+            }
+        };
+
+        document.addEventListener('DOMContentLoaded', async () => {
+            await AuthManager.init();
+            renderFondo();
+        });
+    </script>
+</body>
+</html>

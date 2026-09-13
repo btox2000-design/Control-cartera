@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Control de Cartera V2 - Resumen</title>
+    <link rel="stylesheet" href="/src/style.css">
+</head>
+<body>
+    <div class="app-container">
+        <!-- SIDEBAR ESCRITORIO -->
+        <aside class="desktop-sidebar">
+            <h2>Control de Cartera</h2>
+            <nav style="display: flex; flex-direction: column;">
+                <a href="/index.html" class="active">Resumen</a>
+                <a href="/src/views/clientes.html">Clientes</a>
+                <a href="/src/views/analitica.html">Analítica</a>
+                <a href="/src/views/dinero.html">Gestión de Fondo</a>
+            </nav>
+            <div class="sidebar-footer">
+                <div class="user-info">btox2000</div>
+                <button id="logoutBtn" class="btn-logout">Salir</button>
+            </div>
+        </aside>
+
+        <!-- CONTENIDO PRINCIPAL -->
+        <main class="main-content">
+            <h2>Resumen General</h2>
+            
+            <div class="kpi-container">
+                <div class="kpi-card"><h3>Saldo Pendiente</h3><div class="value" id="totalPendingKpi">$0.00</div></div>
+                <div class="kpi-card" style="border-left-color: var(--success-color);"><h3>Recaudado</h3><div class="value" id="monthlyPendingKpi">$0.00</div></div>
+                <div class="kpi-card" style="border-left-color: var(--warning-color);"><h3>Próximo Pago</h3><div class="value" id="nextPaymentKpi">$0.00</div></div>
+                <div class="kpi-card" style="border-left-color: var(--danger-color);"><h3>Vencido</h3><div class="value" id="overdueKpi">$0.00</div></div>
+            </div>
+
+            <section style="margin-bottom: 20px; display: flex; gap: 10px; flex-wrap: wrap;">
+                <button id="openAddModalBtn" class="btn-action">Agregar Nuevo Crédito</button>
+                <select id="filterClient"><option value="">Todos los clientes</option></select>
+                <label><input type="checkbox" id="showCompleted"> Mostrar completados</label>
+            </section>
+
+            <div class="table-container" style="overflow-x: auto;">
+                <table>
+                    <thead>
+                        <tr><th>ID</th><th>Cliente</th><th>Monto</th><th>Progreso</th><th>Acciones</th></tr>
+                    </thead>
+                    <tbody id="creditBody"></tbody>
+                </table>
+            </div>
+        </main>
+    </div>
+
+    <!-- Navegación móvil -->
+    <nav class="mobile-nav">
+        <a href="/index.html" class="active"><span>📊</span> Resumen</a>
+        <a href="/src/views/clientes.html"><span>👥</span> Clientes</a>
+        <a href="/src/views/analitica.html"><span>📈</span> Analítica</a>
+        <a href="/src/views/dinero.html"><span>💰</span> Fondo</a>
+    </nav>
+
+    <!-- Modal Nuevo Crédito -->
+    <div id="addCreditModal" style="display:none; position: fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:30;">
+        <div style="background: white; padding: 20px; border-radius: 12px; width: 90%; max-width: 400px; margin: 50px auto;">
+            <h3>Nuevo Crédito</h3>
+            <form id="creditForm" style="display:flex; flex-direction:column; gap:10px; margin-top:10px;">
+                <select id="clientSelect" required style="padding:10px; border-radius:6px; border:1px solid #ccc;"></select>
+                <input type="number" id="amount" placeholder="Monto" required style="padding:10px; border-radius:6px; border:1px solid #ccc;">
+                <input type="number" id="months" placeholder="Meses" required style="padding:10px; border-radius:6px; border:1px solid #ccc;">
+                <textarea id="description" placeholder="Descripción"></textarea>
+                <button type="submit" class="btn-action">Guardar</button>
+                <button type="button" class="closeModalBtn btn-cancel">Cancelar</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Modal Confirmación Borrado -->
+    <div id="confirmDeleteModal" style="display:none; position: fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:40;">
+        <div style="background: white; padding: 20px; border-radius: 12px; width: 90%; max-width: 300px; margin: 150px auto; text-align: center;">
+            <h3>¿Borrar Crédito?</h3>
+            <p>Esta acción no se puede deshacer.</p>
+            <div style="display:flex; gap:10px; margin-top:20px;">
+                <button id="btnConfirmDelete" class="btn-delete" style="flex:1;">Borrar</button>
+                <button id="btnCancelDelete" class="btn-cancel" style="flex:1;">Cancelar</button>
+            </div>
+        </div>
+    </div>
+
+    <script type="module">
+        import { AuthManager } from '/main.js';
+        import { Storage } from '/src/data/storage.js';
+        import { FinancialService } from '/src/services/financial.js';
+        import { getPagos } from '/src/data/payments.js'; // Importar getPagos
+        
+        const creditBody = document.getElementById('creditBody');
+        const creditForm = document.getElementById('creditForm');
+        const addCreditModal = document.getElementById('addCreditModal');
+        const confirmDeleteModal = document.getElementById('confirmDeleteModal');
+        let creditToDelete = null;
+
+        const filterClient = document.getElementById('filterClient');
+        const showCompleted = document.getElementById('showCompleted');
+        const clientSelect = document.getElementById('clientSelect');
+        const formatter = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2 });
+
+        // Cargar clientes una sola vez para los select
+        async function initFilters() {
+            const clients = await Storage.getClients();
+            clientSelect.innerHTML = '<option value="">Selecciona cliente</option>';
+            filterClient.innerHTML = '<option value="">Todos los clientes</option>';
+            clients.forEach(c => {
+                const opt = `<option value="${c.name}">${c.name}</option>`;
+                clientSelect.innerHTML += opt;
+                filterClient.innerHTML += opt;
+            });
+        }
+
+        async function loadData() {
+            try {
+                const [credits, transactions] = await Promise.all([Storage.getCredits(), Storage.getTransactions()]);
+                
+                // Obtener todos los pagos existentes
+                const pagosPorCredito = {};
+                for (const credit of credits) {
+                    const { data: pagos } = await getPagos(credit.id);
+                    pagosPorCredito[credit.id] = pagos || [];
+                }
+
+                // 1. Cálculo de KPIs
+                let totalPending = 0;
+                let totalRecaudado = 0;
+                let totalVencido = 0;
+                let proximoPago = 0;
+                const today = new Date();
+
+                credits.forEach(credit => {
+                    const createdAt = new Date(credit.createdAt);
+                    const schedule = FinancialService.calculateAmortizationSchedule(credit.amount, credit.annualRate || 0, credit.months, createdAt);
+                    const pagos = pagosPorCredito[credit.id] || [];
+                    
+                    // Saldo pendiente total
+                    const totalPagado = pagos.reduce((sum, p) => sum + p.monto, 0);
+                    const totalCredito = credit.amount * (1 + (credit.annualRate || 0)/100);
+                    totalPending += (totalCredito - totalPagado);
+
+                    // Recaudado
+                    totalRecaudado += totalPagado;
+
+                    // Vencido y Próximo Pago
+                    const lastPaidMonth = pagos.length;
+                    if (lastPaidMonth < credit.months) {
+                        const dueDate = new Date(createdAt);
+                        dueDate.setMonth(dueDate.getMonth() + lastPaidMonth + 1);
+                        
+                        if (dueDate < today) {
+                            totalVencido += schedule[lastPaidMonth].payment;
+                        } else if (proximoPago === 0) {
+                            proximoPago = schedule[lastPaidMonth].payment;
+                        }
+                    }
+                });
+
+                document.getElementById('totalPendingKpi').textContent = formatter.format(totalPending);
+                document.getElementById('monthlyPendingKpi').textContent = formatter.format(totalRecaudado);
+                document.getElementById('nextPaymentKpi').textContent = formatter.format(proximoPago);
+                document.getElementById('overdueKpi').textContent = formatter.format(totalVencido);
+
+                // 2. Renderizado tabla
+                let filtered = credits.filter(c => {
+                    const totalMonths = parseInt(c.months || 0);
+                    const pagos = pagosPorCredito[c.id] || [];
+                    const isCompleted = pagos.length >= totalMonths;
+                    const matchesClient = !filterClient.value || c.client === filterClient.value;
+                    const matchesCompleted = showCompleted.checked || !isCompleted;
+                    return matchesClient && matchesCompleted;
+                });
+
+                filtered.sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
+
+                creditBody.innerHTML = '';
+                filtered.forEach(credit => {
+                    const totalMonths = parseInt(credit.months || 0);
+                    const pagos = pagosPorCredito[credit.id] || [];
+                    const progressPct = totalMonths > 0 ? Math.round((pagos.length / totalMonths) * 100) : 0;
+                    
+                    const tr = document.createElement('tr');
+                    tr.innerHTML = `
+                        <td>${credit.id.toString().slice(-4)}</td>
+                        <td>${credit.client}</td>
+                        <td>${formatter.format(credit.amount)}</td>
+                        <td>${progressPct}%</td>
+                        <td>
+                            <button onclick="window.location.href='/src/views/loan-details.html?id=${credit.id}'" class="btn-action">Detalle</button>
+                            <button class="btn-delete" data-id="${credit.id}" data-amount="${credit.amount}" data-client="${credit.client}">Borrar</button>
+                        </td>
+                    `;
+                    creditBody.appendChild(tr);
+                });
+            } catch (err) {
+                console.error("Error al cargar créditos:", err);
+            }
+        }
+
+        creditBody.addEventListener('click', (e) => {
+            if (e.target.classList.contains('btn-delete')) {
+                creditToDelete = {
+                    id: e.target.getAttribute('data-id'),
+                    amount: parseFloat(e.target.getAttribute('data-amount')),
+                    client: e.target.getAttribute('data-client')
+                };
+                confirmDeleteModal.style.display = 'block';
+            }
+        });
+
+        document.getElementById('btnConfirmDelete').onclick = async () => {
+            if (creditToDelete) {
+                // Borrar crédito
+                await Storage.deleteCredit(creditToDelete.id);
+                // Compensar en tesorería (reingreso del dinero)
+                await Storage.addTransaction({
+                    date: new Date().toISOString(),
+                    concept: `Reingreso por borrado: ${creditToDelete.client}`,
+                    amount: creditToDelete.amount, // Positivo para reingresar
+                    creditId: null,
+                    category: 'Ajuste'
+                });
+
+                confirmDeleteModal.style.display = 'none';
+                loadData();
+            }
+        };
+
+        document.getElementById('btnCancelDelete').onclick = () => confirmDeleteModal.style.display = 'none';
+        document.getElementById('openAddModalBtn').onclick = () => addCreditModal.style.display = 'block';
+        document.querySelector('.closeModalBtn').onclick = () => addCreditModal.style.display = 'none';
+        filterClient.onchange = loadData;
+        showCompleted.onchange = loadData;
+
+        creditForm.onsubmit = async (e) => {
+            e.preventDefault();
+            const amount = parseFloat(document.getElementById('amount').value);
+            const client = document.getElementById('clientSelect').value;
+
+            // 1. Crear crédito
+            const credit = await Storage.addCredit({
+                client: client,
+                amount: amount,
+                months: parseInt(document.getElementById('months').value),
+                description: document.getElementById('description').value,
+                paidMonths: [],
+                createdAt: new Date().toISOString()
+            });
+
+            // 2. Registrar desembolso en tesorería
+            await Storage.addTransaction({ 
+                date: new Date().toISOString(), 
+                concept: `Préstamo: ${client}`, 
+                amount: -amount, // Negativo para desembolso
+                creditId: credit.id, 
+                category: 'Ajuste' 
+            });
+
+            addCreditModal.style.display = 'none';
+            creditForm.reset();
+            loadData();
+        };
+
+        document.addEventListener('DOMContentLoaded', async () => {
+            await AuthManager.init();
+            await initFilters();
+            loadData();
+        });
+    </script>
+</body>
+</html>
