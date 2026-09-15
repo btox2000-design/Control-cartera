@@ -116,11 +116,55 @@
     </div>
 
     <script type="module">
-        console.log("¡EJECUCIÓN BÁSICA: EL SCRIPT ESTÁ CARGANDO!");
-        alert("Script cargado y ejecutándose");
+        import { supabase } from '/src/supabaseClient.js';
         
-        // Desactivado temporalmente para diagnosticar:
-        // import { supabase } from '/src/supabaseClient.js';
+        let isLoginMode = true;
+        const authForm = document.getElementById('auth-form');
+        const formTitle = document.getElementById('form-title');
+        const submitBtn = document.getElementById('submit-btn');
+        const toggleAuthBtn = document.getElementById('toggle-auth-btn');
+        const messageBox = document.getElementById('message-box');
+
+        toggleAuthBtn.onclick = (e) => {
+            e.preventDefault();
+            isLoginMode = !isLoginMode;
+            formTitle.textContent = isLoginMode ? 'Iniciar Sesión' : 'Crear Cuenta';
+            submitBtn.textContent = isLoginMode ? 'Ingresar' : 'Registrarse';
+            toggleAuthBtn.textContent = isLoginMode ? '¿No tienes cuenta? Regístrate' : '¿Ya tienes cuenta? Inicia sesión';
+            messageBox.style.display = 'none';
+        };
+
+        authForm.onsubmit = async (e) => {
+            e.preventDefault();
+            const email = document.getElementById('email').value;
+            const password = document.getElementById('password').value;
+            
+            messageBox.className = '';
+            messageBox.style.display = 'none';
+
+            try {
+                if (isLoginMode) {
+                    const { error } = await supabase.auth.signInWithPassword({ email, password });
+                    if (error) throw error;
+                    window.location.href = '/index.html';
+                } else {
+                    const { error } = await supabase.auth.signUp({ email, password });
+                    if (error) throw error;
+                    messageBox.className = 'success';
+                    messageBox.textContent = '¡Registro exitoso! Verifica tu correo electrónico para confirmar la cuenta.';
+                }
+            } catch (err) {
+                messageBox.className = 'error';
+                messageBox.textContent = err.message || 'Ocurrió un error inesperado';
+                messageBox.style.display = 'block';
+            }
+        };
+
+        // Redirección si ya está logueado
+        document.addEventListener('DOMContentLoaded', async () => {
+            const { data: { session } } = await supabase.auth.getSession();
+            if (session) window.location.href = '/index.html';
+        });
     </script>
 </body>
 </html>
