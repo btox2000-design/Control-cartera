@@ -47,5 +47,3 @@ export const AuthManager = {
         document.getElementById('mobile-logout-btn')?.addEventListener('click', handleLogout);
     }
 };
-
-document.addEventListener('DOMContentLoaded', AuthManager.init);

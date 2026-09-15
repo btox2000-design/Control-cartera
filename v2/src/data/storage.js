@@ -1,10 +1,10 @@
 import { supabase } from '../supabaseClient.js';
 
 const getUserId = async () => {
-    const { data: { session }, error } = await supabase.auth.getSession();
+    const { data: { user }, error } = await supabase.auth.getUser();
     if (error) throw error;
-    if (!session) throw new Error('Usuario no autenticado');
-    return session.user.id;
+    if (!user) throw new Error('Usuario no autenticado');
+    return user.id;
 };
 
 const handleResponse = (data, error) => {

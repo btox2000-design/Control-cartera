@@ -92,7 +92,8 @@
         });
 
         document.addEventListener('DOMContentLoaded', async () => {
-            await AuthManager.init();
+            const session = await AuthManager.init();
+            if (!session) return;
             renderClients();
         });
     </script>
