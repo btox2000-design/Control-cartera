@@ -116,6 +116,17 @@
     </div>
 
     <script type="module">
+        console.log("DEBUG: Iniciando carga de script en login.html");
+        
+        // Forzar visibilidad por si acaso
+        const container = document.querySelector('.login-container');
+        if (container) {
+            container.style.display = 'flex';
+            console.log("DEBUG: Contenedor login forzado a display: flex");
+        } else {
+            console.error("DEBUG: No se encontró .login-container");
+        }
+
         import { supabase } from '/src/supabaseClient.js';
         
         let isLoginMode = true;
