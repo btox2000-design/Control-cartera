@@ -126,21 +126,31 @@
                     pagosPorCredito[credit.id] = pagos || [];
                 }
 
-                // 1. Cálculo de KPIs
+                // 2. Renderizado tabla y filtrado
+                let filtered = credits.filter(c => {
+                    const totalMonths = parseInt(c.months || 0);
+                    const pagos = pagosPorCredito[c.id] || [];
+                    const isCompleted = pagos.length >= totalMonths;
+                    const matchesClient = !filterClient.value || c.client === filterClient.value;
+                    const matchesCompleted = showCompleted.checked || !isCompleted;
+                    return matchesClient && matchesCompleted;
+                });
+
+                // 1. Cálculo de KPIs (AHORA BASADO EN EL FILTRADO)
                 let totalPending = 0;
                 let totalRecaudado = 0;
                 let totalVencido = 0;
                 let proximoPago = 0;
                 const today = new Date();
 
-                credits.forEach(credit => {
+                filtered.forEach(credit => {
                     const createdAt = new Date(credit.createdAt);
                     const schedule = FinancialService.calculateAmortizationSchedule(credit.amount, credit.annualRate || 0, credit.months, createdAt);
                     const pagos = pagosPorCredito[credit.id] || [];
                     
                     // Saldo pendiente total
+                    const totalCredito = schedule.reduce((sum, row) => sum + row.payment, 0);
                     const totalPagado = pagos.reduce((sum, p) => sum + p.monto, 0);
-                    const totalCredito = credit.amount * (1 + (credit.annualRate || 0)/100);
                     totalPending += (totalCredito - totalPagado);
 
                     // Recaudado
@@ -154,8 +164,9 @@
                         
                         if (dueDate < today) {
                             totalVencido += schedule[lastPaidMonth].payment;
-                        } else if (proximoPago === 0) {
-                            proximoPago = schedule[lastPaidMonth].payment;
+                        } else {
+                            // Sumar el pago correspondiente al mes actual para cada crédito
+                            proximoPago += schedule[lastPaidMonth].payment;
                         }
                     }
                 });
@@ -164,16 +175,6 @@
                 document.getElementById('monthlyPendingKpi').textContent = formatter.format(totalRecaudado);
                 document.getElementById('nextPaymentKpi').textContent = formatter.format(proximoPago);
                 document.getElementById('overdueKpi').textContent = formatter.format(totalVencido);
-
-                // 2. Renderizado tabla
-                let filtered = credits.filter(c => {
-                    const totalMonths = parseInt(c.months || 0);
-                    const pagos = pagosPorCredito[c.id] || [];
-                    const isCompleted = pagos.length >= totalMonths;
-                    const matchesClient = !filterClient.value || c.client === filterClient.value;
-                    const matchesCompleted = showCompleted.checked || !isCompleted;
-                    return matchesClient && matchesCompleted;
-                });
 
                 filtered.sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
 

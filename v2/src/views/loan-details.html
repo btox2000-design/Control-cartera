@@ -163,9 +163,12 @@
                     tbody.appendChild(tr);
                 });
 
-                document.getElementById('kpiTotal').textContent = formatter.format(currentCredit.amount * (1 + (currentCredit.annualRate || 0)/100));
+                // Calcular KPIs correctamente basados en el cronograma
+                const totalCalculated = schedule.reduce((sum, row) => sum + row.payment, 0);
+                
+                document.getElementById('kpiTotal').textContent = formatter.format(totalCalculated);
                 document.getElementById('kpiPaid').textContent = formatter.format(totalPaid);
-                document.getElementById('kpiPending').textContent = formatter.format(currentCredit.amount * (1 + (currentCredit.annualRate || 0)/100) - totalPaid);
+                document.getElementById('kpiPending').textContent = formatter.format(totalCalculated - totalPaid);
             } catch (err) { console.error("Error al cargar detalle:", err); }
         }
 

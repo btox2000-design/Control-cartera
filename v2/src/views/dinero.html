@@ -63,6 +63,8 @@
     <script type="module">
         import { AuthManager } from '/main.js';
         import { Storage } from '/src/data/storage.js';
+        import { FinancialService } from '/src/services/financial.js';
+        import { getPagos } from '/src/data/payments.js';
 
         const formatter = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2 });
         const transBody = document.getElementById('transBody');
@@ -74,33 +76,46 @@
                 const credits = await Storage.getCredits();
                 
                 let saldo = 0;
-                let utilidad = 0;
+                let totalDesembolsos = 0;
+                let totalIngresos = 0;
                 
                 transBody.innerHTML = '';
                 [...trans].sort((a,b) => new Date(b.date) - new Date(a.date)).forEach(t => {
-                    saldo += parseFloat(t.amount);
-                    if (t.category === "Pago" || t.concept.includes("Interés") || t.concept.includes("Pago mensual")) utilidad += parseFloat(t.amount);
+                    const amount = parseFloat(t.amount);
+                    saldo += amount;
+                    
+                    // Categorizar para utilidad
+                    if (t.category === 'Retiro' || t.category === 'Préstamo') {
+                        totalDesembolsos += Math.abs(amount);
+                    } else if (t.category === 'Pago' || t.category === 'Ingreso' || t.category === 'Ajuste') {
+                        totalIngresos += amount;
+                    }
                     
                     transBody.innerHTML += `<tr>
                         <td>${new Date(t.date).toLocaleDateString()}</td>
                         <td>${t.category || "Ajuste"}</td>
                         <td>${t.concept}</td>
-                        <td style="color: ${parseFloat(t.amount) >= 0 ? 'var(--success)' : 'var(--danger)'}; font-weight: 600;">
-                            ${formatter.format(t.amount)}
+                        <td style="color: ${amount >= 0 ? 'var(--success)' : 'var(--danger)'}; font-weight: 600;">
+                            ${formatter.format(amount)}
                         </td>
                     </tr>`;
                 });
 
                 let activo = 0;
-                credits.forEach(c => {
-                    const totalMonths = parseInt(c.months || 0);
-                    const paidCount = (c.paidMonths || []).length;
-                    if (paidCount < totalMonths) activo += parseFloat(c.amount);
-                });
+                for (const c of credits) {
+                    const { data: pagos } = await getPagos(c.id);
+                    const pagosList = pagos || [];
+                    const schedule = FinancialService.calculateAmortizationSchedule(c.amount, c.annualRate || 0, c.months, new Date(c.createdAt));
+                    
+                    const totalCredito = schedule.reduce((sum, row) => sum + row.payment, 0);
+                    const totalPagado = pagosList.reduce((sum, p) => sum + p.monto, 0);
+                    
+                    activo += (totalCredito - totalPagado);
+                }
 
                 document.getElementById('kpiSaldo').textContent = formatter.format(saldo);
                 document.getElementById('kpiActivo').textContent = formatter.format(activo);
-                document.getElementById('kpiUtilidad').textContent = formatter.format(utilidad);
+                document.getElementById('kpiUtilidad').textContent = formatter.format(totalIngresos - totalDesembolsos);
             } catch (err) {
                 console.error("Error al renderizar fondo:", err);
             }

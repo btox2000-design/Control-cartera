@@ -27,8 +27,8 @@ export async function createMovimiento(tipo, monto, creditId = null, payment_id 
     .insert([
       { 
         user_id: user.id, 
-        type: tipo, // 'tipo' -> 'type'
-        amount: monto, // 'monto' -> 'amount'
+        category: tipo, // Changed from type to category
+        amount: monto, 
         creditId: creditId,
         concept: 'Pago de mensualidad'
       }
