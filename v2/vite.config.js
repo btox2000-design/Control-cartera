@@ -9,6 +9,7 @@ export default defineConfig({
         login: resolve(__dirname, 'login.html'),
         clientes: resolve(__dirname, 'src/views/clientes.html'),
         dinero: resolve(__dirname, 'src/views/dinero.html'),
+        analitica: resolve(__dirname, 'src/views/analitica.html'),
         loanDetails: resolve(__dirname, 'src/views/loan-details.html'),
       },
     },
