@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Analítica - Control de Cartera V2</title>
+    <link rel="stylesheet" href="/src/style.css">
+    <style>
+        .placeholder-content {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 70vh;
+            color: var(--text-muted);
+        }
+    </style>
+</head>
+<body>
+    <div class="app-container">
+        <!-- Sidebar escritorio -->
+        <aside class="desktop-sidebar">
+            <h2>Control de Cartera</h2>
+            <a href="/index.html">Resumen</a>
+            <a href="/src/views/clientes.html">Clientes</a>
+            <a href="/src/views/analitica.html" class="active">Analítica</a>
+            <a href="/src/views/dinero.html">Gestión de Fondo</a>
+        </aside>
+
+        <main class="main-content">
+            <div class="placeholder-content">
+                <h1>Analítica</h1>
+                <p>Esta sección estará disponible próximamente.</p>
+            </div>
+        </main>
+    </div>
+
+    <!-- Navegación móvil -->
+    <nav class="mobile-nav">
+        <a href="/index.html"><span>📊</span> Resumen</a>
+        <a href="/src/views/clientes.html"><span>👥</span> Clientes</a>
+        <a href="/src/views/analitica.html" class="active"><span>📈</span> Analítica</a>
+        <a href="/src/views/dinero.html"><span>💰</span> Fondo</a>
+    </nav>
+</body>
+</html>
